@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>넌센스 퀴즈</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gowun+Dodum&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#e9dccb;font-family:"Gowun Dodum",sans-serif;color:#f4f4ee}
+button{font:inherit;cursor:pointer}
+button:focus-visible{outline:3px solid #ffbf00;outline-offset:2px}
+.wrap{max-width:760px;min-height:100dvh;margin:0 auto;padding:28px 16px 40px;display:flex;flex-direction:column;justify-content:center}
+.board{padding:30px 26px 30px;background:#2f4a3c radial-gradient(circle at 30% 20%,#3a5a49,#2f4a3c 70%);border:16px solid #8b5a2b;border-radius:8px;box-shadow:inset 0 0 70px rgba(0,0,0,.35)}
+.tray{height:14px;margin:0 24px;background:#a06a3a;border-radius:0 0 8px 8px}
+h1{margin:0 0 18px;font:400 40px/1.1 "Black Han Sans",sans-serif}
+.card{display:block;width:100%;min-height:240px;padding:20px 8px;border:0;border-bottom:2px dashed rgba(244,244,238,.22);background:none;color:inherit;text-align:center}
+.q,.a,.tip,.hint{display:block}
+.q{margin:0;font:400 clamp(26px,6.5vw,40px)/1.4 "Black Han Sans",sans-serif;word-break:keep-all}
+.a{margin:22px 0 0;font:400 clamp(32px,9vw,52px)/1.3 "Black Han Sans",sans-serif;color:#f6e27f;word-break:keep-all}
+.tip{margin:22px 0 0;font-size:19px;color:#cfe3d6}
+.hint{margin:10px 0 0;font-size:24px;letter-spacing:4px;color:#9fd8ff}
+.ctrl{display:flex;gap:10px;margin-top:18px}
+.ctrl button{min-height:52px;padding:0 14px;border:2px solid rgba(244,244,238,.5);border-radius:10px;background:none;color:#f4f4ee;font-size:19px}
+.ctrl .next{flex:1;border-color:#f6e27f;background:#f6e27f;color:#1f2d24;font-weight:700}
+.ctrl button:disabled{opacity:.35;cursor:default}
+.print{display:block;margin:18px auto 0;min-height:48px;padding:0 18px;border:2px solid #8b5a2b;border-radius:10px;background:#fff8ee;color:#5a3a1c;font-size:18px}
+.fs{position:fixed;top:12px;right:12px;z-index:9;width:48px;height:48px;padding:0;border:0;border-radius:50%;background:rgba(31,45,36,.85);color:#f4f4ee;display:grid;place-items:center}
+.fs svg{width:24px;height:24px}
+.sheet{display:none}
+@media (max-width:520px){
+  .board{padding:22px 16px 22px;border-width:10px}
+  h1{font-size:28px;padding-right:44px;word-break:keep-all}
+  .ctrl{gap:8px}
+  .ctrl button{padding:0 10px;font-size:17px;white-space:nowrap}
+}
+@media print{
+  @page{size:A4;margin:12mm}
+  body{background:#fff;color:#000}
+  .wrap,.fs{display:none}
+  .sheet{display:block}
+  .sheet h2{margin:0 0 4mm;font:400 18pt "Black Han Sans",sans-serif}
+  .sheet table{width:100%;border-collapse:collapse;font-size:11pt}
+  .sheet td{height:8.3mm;padding:0 2mm;border-bottom:1px solid #ccc;vertical-align:middle}
+  .sheet .no{width:8mm;text-align:right;color:#666}
+  .sheet .ans{width:46mm;border-left:2px dashed #000;padding-left:4mm;font-weight:700}
+  .sheet th{font-weight:400;font-size:9pt;color:#555;text-align:left;padding:0 2mm 1mm}
+  .sheet th.ans{font-weight:400}
+}
+</style>
+</head>
+<body>
+<button class="fs" aria-label="전체화면" hidden>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+</button>
+<div class="wrap">
+  <div class="board">
+    <h1>오늘의 넌센스 퀴즈</h1>
+    <button class="card"><span class="q">퀴즈를 불러오는 중이에요.</span></button>
+    <div class="ctrl">
+      <button class="prev" disabled>이전</button>
+      <button class="hintbtn" disabled>초성 힌트</button>
+      <button class="next" disabled>다음 문제</button>
+    </div>
+  </div>
+  <div class="tray"></div>
+  <button class="print" disabled>프린트용 30문제 뽑기</button>
+</div>
+<div class="sheet"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const card = $(".card"), prevBtn = $(".prev"), hintBtn = $(".hintbtn"), nextBtn = $(".next");
+const CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+const cho = s => s.replace(/\(.*?\)/g, "").replace(/[가-힣]/g, c => CHO[Math.floor((c.charCodeAt(0) - 0xAC00) / 588)]);
+const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
+const pick = a => a[Math.floor(Math.random() * a.length)];
+
+let quiz = [], hist = [], pos = -1, open = false, hint = false;
+// 한 사이클 동안 이미 나온 문제 (이 기기에만 저장)
+let seen = new Set();
+try { seen = new Set(JSON.parse(localStorage.getItem("fq-seen")) || []); } catch {}
+const save = () => { try { localStorage.setItem("fq-seen", JSON.stringify([...seen])); } catch {} };
+
+function show(){
+  const [q, a] = hist[pos];
+  card.innerHTML = `<span class="q">${esc(q)}</span>`
+    + (hint && !open ? `<span class="hint">${esc(cho(a))}</span>` : "")
+    + (open ? `<span class="a">${esc(a)}</span>` : `<span class="tip">터치하면 정답!</span>`);
+  prevBtn.disabled = pos === 0;
+  hintBtn.disabled = open;
+}
+function next(){
+  if (pos === hist.length - 1) {
+    let left = quiz.filter(([q]) => !seen.has(q));
+    if (!left.length) {
+      seen.clear();
+      left = quiz.filter(([q]) => !hist[pos] || q !== hist[pos][0]);
+    }
+    const item = pick(left);
+    hist.push(item);
+    seen.add(item[0]);
+    save();
+  }
+  pos++;
+  open = hint = false;
+  show();
+}
+card.addEventListener("click", () => { if (pos < 0) return; open = !open; show(); });
+hintBtn.addEventListener("click", () => { hint = true; show(); });
+prevBtn.addEventListener("click", () => { pos--; open = hint = false; show(); });
+nextBtn.addEventListener("click", next);
+
+$(".print").addEventListener("click", () => {
+  const list = [...quiz].sort(() => Math.random() - .5).slice(0, 30);
+  $(".sheet").innerHTML = `<h2>넌센스 퀴즈 30</h2><table>
+    <tr><th></th><th>문제</th><th class="ans">✂ 접는 선 · 정답</th></tr>
+    ${list.map(([q, a], i) => `<tr><td class="no">${i + 1}</td><td>${esc(q)}</td><td class="ans">${esc(a)}</td></tr>`).join("")}
+  </table>`;
+  window.print();
+});
+
+const fs = $(".fs");
+if (document.fullscreenEnabled || document.webkitFullscreenEnabled) fs.hidden = false;
+fs.addEventListener("click", () => {
+  const d = document, el = d.documentElement;
+  if (d.fullscreenElement || d.webkitFullscreenElement) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
+  else (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+});
+
+fetch("quiz.xlsx").then(r => r.arrayBuffer()).then(buf => {
+  const wb = XLSX.read(buf);
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1}).slice(1);
+  quiz = rows.map(r => [String(r[0] ?? "").trim(), String(r[1] ?? "").trim()]).filter(([q, a]) => q && a);
+  if (!quiz.length) throw 0;
+  nextBtn.disabled = hintBtn.disabled = $(".print").disabled = false;
+  next();
+}).catch(() => { card.innerHTML = `<span class="q">퀴즈를 불러오지 못했어요. 새로고침해 보세요.</span>`; });
+</script>
+</body>
+</html>
