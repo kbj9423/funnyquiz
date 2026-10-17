@@ -79,7 +79,8 @@ const cho = s => s.replace(/\(.*?\)/g, "").replace(/[가-힣]/g, c => CHO[Math.f
 const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
 const pick = a => a[Math.floor(Math.random() * a.length)];
 
-let quiz = [], hist = [], pos = -1, open = false, hint = false;
+// quiz: 출제 단위 목록. 일반 문제는 1개짜리, 그룹은 엑셀 순서대로 묶인 여러 개
+let quiz = [], queue = [], hist = [], pos = -1, open = false, hint = false;
 // 한 사이클 동안 이미 나온 문제 (이 기기에만 저장)
 let seen = new Set();
 try { seen = new Set(JSON.parse(localStorage.getItem("fq-seen")) || []); } catch {}
@@ -95,15 +96,17 @@ function show(){
 }
 function next(){
   if (pos === hist.length - 1) {
-    let left = quiz.filter(([q]) => !seen.has(q));
-    if (!left.length) {
-      seen.clear();
-      left = quiz.filter(([q]) => !hist[pos] || q !== hist[pos][0]);
+    if (!queue.length) {
+      let left = quiz.filter(u => !seen.has(u[0][0]));
+      if (!left.length) {
+        seen.clear();
+        left = quiz.filter(u => !u.includes(hist[pos]));
+      }
+      queue = [...pick(left)];
+      queue.forEach(([q]) => seen.add(q));
+      save();
     }
-    const item = pick(left);
-    hist.push(item);
-    seen.add(item[0]);
-    save();
+    hist.push(queue.shift());
   }
   pos++;
   open = hint = false;
@@ -115,7 +118,8 @@ prevBtn.addEventListener("click", () => { pos--; open = hint = false; show(); })
 nextBtn.addEventListener("click", next);
 
 $(".print").addEventListener("click", () => {
-  const list = [...quiz].sort(() => Math.random() - .5).slice(0, 30);
+  const list = [];
+  for (const u of [...quiz].sort(() => Math.random() - .5)) if (list.length + u.length <= 30) list.push(...u);
   $(".sheet").innerHTML = `<h2>넌센스 퀴즈 30</h2><table>
     <tr><th></th><th>문제</th><th class="ans">✂ 접는 선 · 정답</th></tr>
     ${list.map(([q, a], i) => `<tr><td class="no">${i + 1}</td><td>${esc(q)}</td><td class="ans">${esc(a)}</td></tr>`).join("")}
@@ -134,7 +138,15 @@ fs.addEventListener("click", () => {
 fetch("quiz.xlsx").then(r => r.arrayBuffer()).then(buf => {
   const wb = XLSX.read(buf);
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1}).slice(1);
-  quiz = rows.map(r => [String(r[0] ?? "").trim(), String(r[1] ?? "").trim()]).filter(([q, a]) => q && a);
+  const units = new Map();
+  rows.forEach((r, i) => {
+    const [q, a, g] = [0, 1, 2].map(k => String(r[k] ?? "").trim());
+    if (!q || !a) return;
+    const key = g ? "g:" + g : "q:" + i;
+    if (!units.has(key)) units.set(key, []);
+    units.get(key).push([q, a]);
+  });
+  quiz = [...units.values()];
   if (!quiz.length) throw 0;
   nextBtn.disabled = hintBtn.disabled = $(".print").disabled = false;
   next();
